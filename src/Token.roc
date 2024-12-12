@@ -1,6 +1,6 @@
-module [Token, init, next]
+module [Token, next]
 
-bufCapacity = 256
+bufCapacity = 1024
 
 Token : [OpenRound, CloseRound, Symbol Str, String Str, Number Dec]
 TokenError : [InvalidToken U64, Eof U64, BadUtf8 U64]
@@ -15,8 +15,17 @@ State : {
     bufIndex : U64,
 }
 
-init : List U8 -> State
-init = \source -> { source, index: 0, start: 0, buf: List.repeat 0 bufCapacity, bufIndex: 0 }
+mState =
+    init = \source -> { source, index: 0, start: 0, buf: List.repeat 0 bufCapacity, bufIndex: 0 }
+    resetBuf = \s -> { s & buf: listClear s.buf, bufIndex: 0 }
+    incrIndex = \s -> { s & index: s.index + 1 }
+    appendChar = \s, c ->
+        { s &
+            buf: List.set s.buf s.bufIndex c,
+            bufIndex: s.bufIndex + 1,
+        }
+
+    { init, resetBuf, incrIndex, appendChar }
 
 listClear = \list -> listClear1 list (List.len list) 0
 listClear1 = \list, len, idx ->
@@ -25,47 +34,39 @@ listClear1 = \list, len, idx ->
     else
         listClear1 (List.set list idx 0) len (idx + 1)
 
-resetBuf = \state -> { state & buf: listClear state.buf, bufIndex: 0 }
-incrIndex = \state -> { state & index: state.index + 1 }
-appendChar = \state, c ->
-    { state &
-        buf: List.set state.buf state.bufIndex c,
-        bufIndex: state.bufIndex + 1,
-    }
-
 next : State -> Result (Token, State) TokenError
-next = \state ->
-    { source, index } = state
+next = \s ->
+    { source, index } = s
     when List.get source index is
-        Ok '(' -> Ok (OpenRound, { state & index: index + 1 })
-        Ok ')' -> Ok (CloseRound, { state & index: index + 1 })
-        Ok '"' -> stringStart { state & start: index + 1, index: index + 1 }
-        Ok ' ' | Ok '\n' | Ok '\r' | Ok '\t' -> next { state & index: index + 1 }
+        Ok '(' -> Ok (OpenRound, { s & index: index + 1 })
+        Ok ')' -> Ok (CloseRound, { s & index: index + 1 })
+        Ok '"' -> stringStart { s & start: index + 1, index: index + 1 }
+        Ok ' ' | Ok '\n' | Ok '\r' | Ok '\t' -> next { s & index: index + 1 }
         Ok _ -> Err (Eof 0)
         Err OutOfBounds -> Err (Eof index)
 
 stringStart : State -> Result (Token, State) TokenError
-stringStart = \state ->
-    { source, index } = state
+stringStart = \s ->
+    { source, index } = s
     when List.get source index is
         Ok '"' ->
             # end of string
             res =
-                state.buf
-                |> List.takeFirst state.bufIndex
+                s.buf
+                |> List.takeFirst s.bufIndex
                 |> Str.fromUtf8
                 |> Result.mapErr \_ -> Err (BadUtf8 index)
-            Result.try res \r -> Ok (String r, state |> resetBuf |> incrIndex)
+            Result.try res \r -> Ok (String r, s |> mState.resetBuf |> mState.incrIndex)
 
-        Ok '\\' -> stringBackslash { state & index: (index + 1) }
-        Ok c -> stringStart (state |> appendChar c |> incrIndex)
+        Ok '\\' -> stringBackslash { s & index: (index + 1) }
+        Ok c -> stringStart (s |> mState.appendChar c |> mState.incrIndex)
         Err OutOfBounds -> Err (Eof index)
 
-stringBackslash = \state ->
-    { source, index } = state
+stringBackslash = \s ->
+    { source, index } = s
     when List.get source index is
-        Ok '\\' -> stringStart (state |> appendChar '\\' |> incrIndex)
-        Ok c -> stringStart (state |> appendChar c |> incrIndex)
+        Ok '\\' -> stringStart (s |> mState.appendChar '\\' |> mState.incrIndex)
+        Ok c -> stringStart (s |> mState.appendChar c |> mState.incrIndex)
         Err OutOfBounds -> Err (Eof index)
 
 #
@@ -117,9 +118,9 @@ expect
     source = "()"
     good = [Ok OpenRound, Ok CloseRound, Err (Eof 2)]
 
-    state = init (Str.toUtf8 source)
+    s = mState.init (Str.toUtf8 source)
 
-    walkState = { tokState: state, break: None }
+    walkState = { tokState: s, break: None }
     res = List.walkUntil
         good
         walkState
@@ -133,9 +134,9 @@ expect
     source = "(\"string 1\" \"string 2\")"
     good = [Ok OpenRound, Ok (String "string 1"), Ok (String "string 2"), Ok CloseRound, Err (Eof 23)]
 
-    state = init (Str.toUtf8 source)
+    s = mState.init (Str.toUtf8 source)
 
-    walkState = { tokState: state, break: None }
+    walkState = { tokState: s, break: None }
     res = List.walkUntil
         good
         walkState
@@ -149,8 +150,8 @@ expect
     source = "\"hello back\\\\slash\""
     good = [Ok (String "hello back\\slash"), Err (Eof 19)]
 
-    state = init (Str.toUtf8 source)
-    walkState = { tokState: state, break: None }
+    s = mState.init (Str.toUtf8 source)
+    walkState = { tokState: s, break: None }
     res = List.walkUntil
         good
         walkState
