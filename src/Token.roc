@@ -27,12 +27,14 @@ mState =
 
     { init, resetBuf, incrIndex, appendChar }
 
-listClear = \list -> listClear1 list (List.len list) 0
-listClear1 = \list, len, idx ->
-    if idx >= len then
-        list
-    else
-        listClear1 (List.set list idx 0) len (idx + 1)
+listClear = \list ->
+    f = \l, len, i ->
+        if i >= len then
+            l
+        else
+            f (List.set l i 0) len (i + 1)
+
+    f list (List.len list) 0
 
 next : State -> Result (Token, State) TokenError
 next = \s ->
