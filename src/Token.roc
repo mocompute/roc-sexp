@@ -86,24 +86,24 @@ check_ = \st, expected ->
                     if tok == good then
                         Continue { st & tokState: nextTokState }
                     else
-                        dbg "\nexpected: $(Inspect.toStr good)\nactual:   $(Inspect.toStr tok)"
+                        dbg (expectedVsActual good tok)
                         Break { st & break: Mismatch }
 
                 Err err ->
-                    dbg "\nexpected: $(Inspect.toStr err)\nactual:   $(Inspect.toStr tok)"
+                    dbg (expectedVsActual err tok)
                     Break { st & break: Mismatch }
 
         Err (Eof index) ->
             when expected is
                 Ok good ->
-                    dbg "\nexpected: $(Inspect.toStr good)\nactual:   $(Inspect.toStr (Eof index))"
+                    dbg (expectedVsActual good (Eof index))
                     Break { st & break: Mismatch }
 
                 Err (Eof expectedIndex) ->
                     if index == expectedIndex then
                         Break st
                     else
-                        dbg "\nexpected: $(Inspect.toStr (Eof expectedIndex))\nactual:   $(Inspect.toStr (Eof index))"
+                        dbg (expectedVsActual (Eof expectedIndex) (Eof index))
                         Break { st & break: Mismatch }
 
                 Err _ ->
@@ -112,51 +112,36 @@ check_ = \st, expected ->
         Err _ ->
             Break { st & break: Error }
 
+expectedVsActual = \expected, actual ->
+    "\nexpected: $(Inspect.toStr expected)\nactual:   $(Inspect.toStr actual)"
+
 #
+
+## Tokenize source and compare against expected.
+checkTokens = \source, expected ->
+    s = stateInit (Str.toUtf8 source)
+
+    walkState = { tokState: s, break: None }
+    res = List.walkUntil
+        expected
+        walkState
+        check_
+
+    when res.break is
+        None -> Bool.true
+        _ -> Bool.false
 
 expect
     source = "()"
     good = [Ok OpenRound, Ok CloseRound, Err (Eof 2)]
-
-    s = stateInit (Str.toUtf8 source)
-
-    walkState = { tokState: s, break: None }
-    res = List.walkUntil
-        good
-        walkState
-        check_
-
-    when res.break is
-        None -> Bool.true
-        _ -> Bool.false
+    checkTokens source good
 
 expect
     source = "(\"string 1\" \"string 2\")"
     good = [Ok OpenRound, Ok (String "string 1"), Ok (String "string 2"), Ok CloseRound, Err (Eof 23)]
-
-    s = stateInit (Str.toUtf8 source)
-
-    walkState = { tokState: s, break: None }
-    res = List.walkUntil
-        good
-        walkState
-        check_
-
-    when res.break is
-        None -> Bool.true
-        _ -> Bool.false
+    checkTokens source good
 
 expect
     source = "\"hello back\\\\slash\""
     good = [Ok (String "hello back\\slash"), Err (Eof 19)]
-
-    s = stateInit (Str.toUtf8 source)
-    walkState = { tokState: s, break: None }
-    res = List.walkUntil
-        good
-        walkState
-        check_
-
-    when res.break is
-        None -> Bool.true
-        _ -> Bool.false
+    checkTokens source good
