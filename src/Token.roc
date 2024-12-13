@@ -1,5 +1,7 @@
 module [Token, next]
 
+# TODO: make this a module parameter
+# https://github.com/roc-lang/roc/tree/main/crates/cli/tests/test-projects/module_params
 bufCapacity = 1024
 
 Token : [OpenRound, CloseRound, Symbol Str, String Str, Number Dec]
@@ -15,17 +17,13 @@ State : {
     bufIndex : U64,
 }
 
-mState =
-    init = \source -> { source, index: 0, start: 0, buf: List.repeat 0 bufCapacity, bufIndex: 0 }
-    resetBuf = \s -> { s & buf: listClear s.buf, bufIndex: 0 }
-    incrIndex = \s -> { s & index: s.index + 1 }
-    appendChar = \s, c ->
-        { s &
-            buf: List.set s.buf s.bufIndex c,
-            bufIndex: s.bufIndex + 1,
-        }
-
-    { init, resetBuf, incrIndex, appendChar }
+stateInit = \source -> { source, index: 0, start: 0, buf: List.repeat 0 bufCapacity, bufIndex: 0 }
+stateResetBuf = \s -> { s & buf: listClear s.buf, bufIndex: 0 }
+stateIncrIndex = \s -> { s & index: s.index + 1 }
+stateAppendChar = \s, c -> { s &
+        buf: List.set s.buf s.bufIndex c,
+        bufIndex: s.bufIndex + 1,
+    }
 
 listClear = \list ->
     f = \l, len, i ->
@@ -58,17 +56,17 @@ stringStart = \s ->
                 |> List.takeFirst s.bufIndex
                 |> Str.fromUtf8
                 |> Result.mapErr \_ -> Err (BadUtf8 index)
-            Result.try res \r -> Ok (String r, s |> mState.resetBuf |> mState.incrIndex)
+            Result.try res \r -> Ok (String r, s |> stateResetBuf |> stateIncrIndex)
 
         Ok '\\' -> stringBackslash { s & index: (index + 1) }
-        Ok c -> stringStart (s |> mState.appendChar c |> mState.incrIndex)
+        Ok c -> stringStart (s |> stateAppendChar c |> stateIncrIndex)
         Err OutOfBounds -> Err (Eof index)
 
 stringBackslash = \s ->
     { source, index } = s
     when List.get source index is
-        Ok '\\' -> stringStart (s |> mState.appendChar '\\' |> mState.incrIndex)
-        Ok c -> stringStart (s |> mState.appendChar c |> mState.incrIndex)
+        Ok '\\' -> stringStart (s |> stateAppendChar '\\' |> stateIncrIndex)
+        Ok c -> stringStart (s |> stateAppendChar c |> stateIncrIndex)
         Err OutOfBounds -> Err (Eof index)
 
 #
@@ -120,7 +118,7 @@ expect
     source = "()"
     good = [Ok OpenRound, Ok CloseRound, Err (Eof 2)]
 
-    s = mState.init (Str.toUtf8 source)
+    s = stateInit (Str.toUtf8 source)
 
     walkState = { tokState: s, break: None }
     res = List.walkUntil
@@ -136,7 +134,7 @@ expect
     source = "(\"string 1\" \"string 2\")"
     good = [Ok OpenRound, Ok (String "string 1"), Ok (String "string 2"), Ok CloseRound, Err (Eof 23)]
 
-    s = mState.init (Str.toUtf8 source)
+    s = stateInit (Str.toUtf8 source)
 
     walkState = { tokState: s, break: None }
     res = List.walkUntil
@@ -152,7 +150,7 @@ expect
     source = "\"hello back\\\\slash\""
     good = [Ok (String "hello back\\slash"), Err (Eof 19)]
 
-    s = mState.init (Str.toUtf8 source)
+    s = stateInit (Str.toUtf8 source)
     walkState = { tokState: s, break: None }
     res = List.walkUntil
         good
