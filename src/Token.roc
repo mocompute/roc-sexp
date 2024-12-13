@@ -53,12 +53,12 @@ isIdentifierStart = \c ->
 
 isIdentifierMiddle = \c -> isIdentifierStart c || isDigit c
 
-next : State -> Result (Token, State) TokenError
+next : State -> Result ((Token, U64), State) TokenError
 next = \s ->
     { source, index } = s
     when List.get source index is
-        Ok '(' -> Ok (OpenRound, { s & index: index + 1 })
-        Ok ')' -> Ok (CloseRound, { s & index: index + 1 })
+        Ok '(' -> Ok ((OpenRound, index), { s & index: index + 1 })
+        Ok ')' -> Ok ((CloseRound, index), { s & index: index + 1 })
         Ok '"' -> stringStart { s & start: index + 1, index: index + 1 }
         Ok c ->
             if isWhitespace c then
@@ -78,7 +78,7 @@ next = \s ->
 # round bracket, and passed to Str.toDec to convert to 128-bit
 # decimal.
 
-numericStart : State -> Result (Token, State) TokenError
+numericStart : State -> Result ((Token, U64), State) TokenError
 numericStart = \s ->
     { source, index } = s
 
@@ -87,7 +87,7 @@ numericStart = \s ->
             Ok (str, state) ->
                 when Str.toDec str is
                     Ok dec ->
-                        Ok (Number dec, state |> stateIncrIndex)
+                        Ok ((Number dec, state.start), state |> stateIncrIndex)
 
                     Err _ -> Err (InvalidToken state.start)
 
@@ -111,13 +111,13 @@ numericStart = \s ->
 
 # -- identifier ----------------------------------------------------
 
-identifierStart : State -> Result (Token, State) TokenError
+identifierStart : State -> Result ((Token, U64), State) TokenError
 identifierStart = \s ->
     { source, index } = s
 
     returnSymbol = \st ->
         when stateBufToString st is
-            Ok (str, state) -> Ok (Symbol str, state |> stateIncrIndex)
+            Ok (str, state) -> Ok ((Symbol str, state.start), state |> stateIncrIndex)
             Err err -> err
 
     when List.get source index is
@@ -140,19 +140,17 @@ identifierStart = \s ->
 
 # -- string --------------------------------------------------------
 
-stringStart : State -> Result (Token, State) TokenError
+stringStart : State -> Result ((Token, U64), State) TokenError
 stringStart = \s ->
     { source, index } = s
 
     returnString = \st ->
         when stateBufToString st is
-            Ok (str, state) -> Ok (String str, state |> stateIncrIndex)
+            Ok (str, state) -> Ok ((String str, state.start), state |> stateIncrIndex)
             Err err -> err
 
     when List.get source index is
-        Ok '"' ->
-            returnString s
-
+        Ok '"' -> returnString s
         Ok '\\' -> stringBackslash { s & index: (index + 1) }
         Ok c -> stringStart (s |> stateAppendChar c |> stateIncrIndex)
         Err OutOfBounds -> Err (Eof index)
@@ -173,7 +171,7 @@ check_ = \st, expected ->
     { tokState } = st
 
     when next tokState is
-        Ok (tok, nextTokState) ->
+        Ok ((tok, _), nextTokState) ->
             when expected is
                 Ok good ->
                     if tok == good then
@@ -198,8 +196,6 @@ check_ = \st, expected ->
                     else
                         dbg (expectedVsActual expectError err)
                         Break { st & break: Mismatch }
-
-
 
 expectedVsActual = \expected, actual ->
     "\nexpected: $(Inspect.toStr expected)\nactual:   $(Inspect.toStr actual)"
