@@ -1,4 +1,4 @@
-module [Token, next]
+module [Token, next, State, stateInit]
 
 # TODO: make this a module parameter
 # https://github.com/roc-lang/roc/tree/main/crates/cli/tests/test-projects/module_params
