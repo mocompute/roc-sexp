@@ -32,7 +32,7 @@ stateBufToString = \st ->
         |> List.takeFirst st.bufIndex
         |> Str.fromUtf8
         |> Result.mapErr \_ -> Err (BadUtf8 st.start)
-    Result.try res \r -> Ok (r, st |> stateResetBuf)
+    Result.try res \r -> Ok ("$(r)", st |> stateResetBuf)
 
 ## Reset contents of a list to all 0 in-place
 listClear = \list ->
