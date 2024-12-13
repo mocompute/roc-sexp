@@ -18,7 +18,7 @@ State : {
 }
 
 stateInit = \source -> { source, index: 0, start: 0, buf: List.repeat 0 bufCapacity, bufIndex: 0 }
-stateResetBuf = \s -> { s & buf: listClear s.buf, bufIndex: 0 }
+stateResetBuf = \s -> { s & bufIndex: 0 }
 stateIncrIndex = \s -> { s & index: s.index + 1 }
 stateDecrIndex = \s -> { s & index: s.index - 1 }
 stateAppendChar = \s, c -> { s &
@@ -33,11 +33,6 @@ stateBufToString = \st ->
         |> Str.fromUtf8
         |> Result.mapErr \_ -> Err (BadUtf8 st.start)
     Result.try res \r -> Ok (Str.releaseExcessCapacity r, st |> stateResetBuf)
-
-## Reset contents of a list to all 0 in-place
-listClear = \list ->
-    f = \l, sz, i -> if i < sz then f (List.set l i 0) sz (i + 1) else l
-    f list (List.len list) 0
 
 isWhitespace = \c ->
     when c is
