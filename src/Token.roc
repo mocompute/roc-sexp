@@ -45,7 +45,6 @@ isWhitespace = \c ->
         _ -> Bool.false
 
 isDigit = \c -> c >= '0' && c <= '9'
-# isDecimalPoint = \c -> c == '.'
 
 isIdentifierSpecial = \c ->
     when c is
@@ -66,14 +65,56 @@ next = \s ->
         Ok '(' -> Ok (OpenRound, { s & index: index + 1 })
         Ok ')' -> Ok (CloseRound, { s & index: index + 1 })
         Ok '"' -> stringStart { s & start: index + 1, index: index + 1 }
-        Ok ' ' | Ok '\n' | Ok '\r' | Ok '\t' -> next { s & index: index + 1 }
         Ok c ->
-            if isIdentifierStart c then
+            if isWhitespace c then
+                next { s & index: index + 1 }
+            else if isIdentifierStart c then
                 identifierStart ({ s & start: index } |> stateAppendChar c |> stateIncrIndex)
+            else if isDigit c then
+                numericStart ({ s & start: index } |> stateAppendChar c |> stateIncrIndex)
             else
                 Err (Eof 0)
 
         Err OutOfBounds -> Err (Eof index)
+
+# -- numeric -------------------------------------------------------
+#
+# symbols which start with a digit are processed until whitespace or a
+# round bracket, and passed to Str.toDec to convert to 128-bit
+# decimal.
+
+numericStart : State -> Result (Token, State) TokenError
+numericStart = \s ->
+    { source, index } = s
+
+    returnNumber = \st ->
+        when stateBufToString st is
+            Ok (str, state) ->
+                when Str.toDec str is
+                    Ok dec ->
+                        Ok (Number dec, state |> stateIncrIndex)
+
+                    Err _ -> Err (InvalidToken state.start)
+
+            Err err -> err
+
+    when List.get source index is
+        Err OutOfBounds ->
+            # backtrack so next\ gets the correct index for an Eof
+            returnNumber (s |> stateDecrIndex)
+
+        Err _ ->
+            Err (Eof index)
+
+        Ok c ->
+            if isWhitespace c || c == '(' || c == ')' then
+                # backtrack so next\ can process the whitespace or
+                # CloseRound
+                returnNumber (s |> stateDecrIndex)
+            else
+                numericStart (s |> stateAppendChar c |> stateIncrIndex)
+
+# -- identifier ----------------------------------------------------
 
 identifierStart : State -> Result (Token, State) TokenError
 identifierStart = \s ->
@@ -82,7 +123,7 @@ identifierStart = \s ->
     returnSymbol = \st ->
         when stateBufToString st is
             Ok (str, state) -> Ok (Symbol str, state |> stateIncrIndex)
-            Err err -> Err err
+            Err err -> err
 
     when List.get source index is
         Err OutOfBounds ->
@@ -95,25 +136,28 @@ identifierStart = \s ->
         Ok c ->
             if isIdentifierMiddle c then
                 identifierStart (s |> stateAppendChar c |> stateIncrIndex)
-            else if isWhitespace c || c == ')' then
-                # backtrack so next\ gets to process the whitespace or
+            else if isWhitespace c || c == '(' || c == ')' then
+                # backtrack so next\ can process the whitespace or
                 # CloseRound
                 returnSymbol (s |> stateDecrIndex)
             else
                 Err (InvalidToken index)
+
+# -- string --------------------------------------------------------
 
 stringStart : State -> Result (Token, State) TokenError
 stringStart = \s ->
     { source, index } = s
 
     returnString = \st ->
-        when stateBufToString st  is
+        when stateBufToString st is
             Ok (str, state) -> Ok (String str, state |> stateIncrIndex)
-            Err err -> Err err
+            Err err -> err
 
     when List.get source index is
         Ok '"' ->
             returnString s
+
         Ok '\\' -> stringBackslash { s & index: (index + 1) }
         Ok c -> stringStart (s |> stateAppendChar c |> stateIncrIndex)
         Err OutOfBounds -> Err (Eof index)
@@ -125,9 +169,7 @@ stringBackslash = \s ->
         Ok c -> stringStart (s |> stateAppendChar c |> stateIncrIndex)
         Err OutOfBounds -> Err (Eof index)
 
-#
-# tests
-#
+# -- tests ---------------------------------------------------------
 
 WalkState : { tokState : State, break : [None, Mismatch, Error] }
 
@@ -149,29 +191,23 @@ check_ = \st, expected ->
                     dbg (expectedVsActual err tok)
                     Break { st & break: Mismatch }
 
-        Err (Eof index) ->
+        Err err ->
             when expected is
                 Ok good ->
-                    dbg (expectedVsActual good (Eof index))
+                    dbg (expectedVsActual good err)
                     Break { st & break: Mismatch }
 
-                Err (Eof expectedIndex) ->
-                    if index == expectedIndex then
-                        Break st
+                Err expectError ->
+                    if err == expectError then
+                        Continue st
                     else
-                        dbg (expectedVsActual (Eof expectedIndex) (Eof index))
+                        dbg (expectedVsActual expectError err)
                         Break { st & break: Mismatch }
 
-                Err _ ->
-                    Break { st & break: Error }
 
-        Err _ ->
-            Break { st & break: Error }
 
 expectedVsActual = \expected, actual ->
     "\nexpected: $(Inspect.toStr expected)\nactual:   $(Inspect.toStr actual)"
-
-#
 
 ## Tokenize source and compare against expected.
 checkTokens = \source, expected ->
@@ -210,4 +246,19 @@ expect
 expect
     source = "\"hello back\\\\slash\""
     good = [Ok (String "hello back\\slash"), Err (Eof 19)]
+    checkTokens source good
+
+expect
+    source = "123"
+    good = [Ok (Number 123), Err (Eof 3)]
+    checkTokens source good
+
+expect
+    source = "123.456789"
+    good = [Ok (Number 123.456789), Err (Eof 10)]
+    checkTokens source good
+
+expect
+    source = "123xyz"
+    good = [Err (InvalidToken 0)]
     checkTokens source good
