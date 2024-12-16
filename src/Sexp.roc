@@ -16,6 +16,7 @@ stateInit = \source -> {
     source,
 }
 
+## Return a string representation of the Sexp.
 toString : Sexp -> Str
 toString = \sexp ->
     Str.joinWith
@@ -36,6 +37,10 @@ toString_0 = \sexp, builder ->
             |> List.concat (List.walk slist subBuilder f)
             |> List.append ")"
 
+
+## Parse a List U8 (e.g. from Str.toUtf8) into a Sexp. On InvalidToken
+## error, the token is returned along with its location.
+parse : List U8 -> Result Sexp [InvalidToken Token.Token U64, TokenizerError Token.TokenError]
 parse = \source ->
     state = stateInit source
     tokenState = Token.stateInit source
@@ -56,7 +61,7 @@ parse = \source ->
                         Ok (sexp, _, _) -> Ok sexp
                         Err e -> Err e
 
-                TCloseRound -> Err (InvalidToken CloseRound loc)
+                TCloseRound -> Err (InvalidToken TCloseRound loc)
                 _ -> crash "unreachable"
 
         Err e -> Err (TokenizerError e)

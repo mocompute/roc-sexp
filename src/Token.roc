@@ -1,5 +1,6 @@
 module [
     Token,
+    TokenError,
     next,
     State,
     stateInit,
