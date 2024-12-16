@@ -1,10 +1,17 @@
-module [Token, next, State, stateInit]
+module [
+    Token,
+    next,
+    State,
+    stateInit,
+]
 
 # TODO: make this a module parameter
 # https://github.com/roc-lang/roc/tree/main/crates/cli/tests/test-projects/module_params
 bufCapacity = 1024
 
-Token : [OpenRound, CloseRound, Symbol Str, String Str, Number Dec]
+
+
+Token : [TOpenRound, TCloseRound, TSymbol Str, TString Str, TNumber Dec]
 TokenError : [InvalidToken U64, Eof U64, BadUtf8 U64]
 
 TokenOrError : [Ok Token, Err TokenError]
@@ -57,8 +64,8 @@ next : State -> Result ((Token, U64), State) TokenError
 next = \s ->
     { source, index } = s
     when List.get source index is
-        Ok '(' -> Ok ((OpenRound, index), { s & index: index + 1 })
-        Ok ')' -> Ok ((CloseRound, index), { s & index: index + 1 })
+        Ok '(' -> Ok ((TOpenRound, index), { s & index: index + 1 })
+        Ok ')' -> Ok ((TCloseRound, index), { s & index: index + 1 })
         Ok '"' -> stringStart { s & start: index + 1, index: index + 1 }
         Ok c ->
             if isWhitespace c then
@@ -87,7 +94,7 @@ numericStart = \s ->
             Ok (str, state) ->
                 when Str.toDec str is
                     Ok dec ->
-                        Ok ((Number dec, state.start), state |> stateIncrIndex)
+                        Ok ((TNumber dec, state.start), state |> stateIncrIndex)
 
                     Err _ -> Err (InvalidToken state.start)
 
@@ -104,7 +111,7 @@ numericStart = \s ->
         Ok c ->
             if isWhitespace c || c == '(' || c == ')' then
                 # backtrack so next\ can process the whitespace or
-                # CloseRound
+                # TCloseRound
                 returnNumber (s |> stateDecrIndex)
             else
                 numericStart (s |> stateAppendChar c |> stateIncrIndex)
@@ -115,15 +122,15 @@ identifierStart : State -> Result ((Token, U64), State) TokenError
 identifierStart = \s ->
     { source, index } = s
 
-    returnSymbol = \st ->
+    returnTSymbol = \st ->
         when stateBufToString st is
-            Ok (str, state) -> Ok ((Symbol str, state.start), state |> stateIncrIndex)
+            Ok (str, state) -> Ok ((TSymbol str, state.start), state |> stateIncrIndex)
             Err err -> err
 
     when List.get source index is
         Err OutOfBounds ->
             # backtrack so next\ gets the correct index for an Eof
-            returnSymbol (s |> stateDecrIndex)
+            returnTSymbol (s |> stateDecrIndex)
 
         Err _ ->
             Err (Eof index)
@@ -133,8 +140,8 @@ identifierStart = \s ->
                 identifierStart (s |> stateAppendChar c |> stateIncrIndex)
             else if isWhitespace c || c == '(' || c == ')' then
                 # backtrack so next\ can process the whitespace or
-                # CloseRound
-                returnSymbol (s |> stateDecrIndex)
+                # TCloseRound
+                returnTSymbol (s |> stateDecrIndex)
             else
                 Err (InvalidToken index)
 
@@ -146,7 +153,7 @@ stringStart = \s ->
 
     returnString = \st ->
         when stateBufToString st is
-            Ok (str, state) -> Ok ((String str, state.start), state |> stateIncrIndex)
+            Ok (str, state) -> Ok ((TString str, state.start), state |> stateIncrIndex)
             Err err -> err
 
     when List.get source index is
@@ -216,37 +223,37 @@ checkTokens = \source, expected ->
 
 expect
     source = "()"
-    good = [Ok OpenRound, Ok CloseRound, Err (Eof 2)]
+    good = [Ok TOpenRound, Ok TCloseRound, Err (Eof 2)]
     checkTokens source good
 
 expect
     source = "abcdef"
-    good = [Ok (Symbol "abcdef"), Err (Eof 6)]
+    good = [Ok (TSymbol "abcdef"), Err (Eof 6)]
     checkTokens source good
 
 expect
     source = "(abcdef)"
-    good = [Ok OpenRound, Ok (Symbol "abcdef"), Ok CloseRound, Err (Eof 8)]
+    good = [Ok TOpenRound, Ok (TSymbol "abcdef"), Ok TCloseRound, Err (Eof 8)]
     checkTokens source good
 
 expect
     source = "(\"string 1\" \"string 2\")"
-    good = [Ok OpenRound, Ok (String "string 1"), Ok (String "string 2"), Ok CloseRound, Err (Eof 23)]
+    good = [Ok TOpenRound, Ok (TString "string 1"), Ok (TString "string 2"), Ok TCloseRound, Err (Eof 23)]
     checkTokens source good
 
 expect
     source = "\"hello back\\\\slash\""
-    good = [Ok (String "hello back\\slash"), Err (Eof 19)]
+    good = [Ok (TString "hello back\\slash"), Err (Eof 19)]
     checkTokens source good
 
 expect
     source = "123"
-    good = [Ok (Number 123), Err (Eof 3)]
+    good = [Ok (TNumber 123), Err (Eof 3)]
     checkTokens source good
 
 expect
     source = "123.456789"
-    good = [Ok (Number 123.456789), Err (Eof 10)]
+    good = [Ok (TNumber 123.456789), Err (Eof 10)]
     checkTokens source good
 
 expect
