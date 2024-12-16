@@ -90,3 +90,19 @@ expect
             [123] == sublist mono_1 { start: 0, len: 1 }
 
         _ -> Bool.false
+
+## Sublists and seamless slices
+expect
+    mono = Monotonic.withCapacity 1024
+    when alloc mono 1024 999 is
+        Ok (p, mono_1) ->
+            l1 = sublist mono_1 { start: 0, len: 128 }
+            _ = l1 |> List.walk 0 \i, _x ->
+                _ = List.set l1 i 123
+                i + 1
+
+            # List.set doesn't mutate the list.
+            List.all l1 \x -> 999 == x
+
+        Err _ ->
+            Bool.false
