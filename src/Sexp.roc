@@ -16,6 +16,26 @@ stateInit = \source -> {
     source,
 }
 
+toString : Sexp -> Str
+toString = \sexp ->
+    Str.joinWith
+        (toString_0 sexp (List.withCapacity initialSListCapacity))
+        " "
+
+toString_0 : Sexp, List Str -> List Str
+toString_0 = \sexp, builder ->
+    when sexp is
+        Nil -> List.append builder "()"
+        SNumber x -> List.append builder (Num.toStr x)
+        SSymbol x -> List.append builder x
+        SString x -> List.append builder "\"$(x)\""
+        SList slist ->
+            subBuilder = List.withCapacity initialSListCapacity
+            f = \state, elem -> toString_0 elem state
+            List.append builder "("
+            |> List.concat (List.walk slist subBuilder f)
+            |> List.append ")"
+
 parse = \source ->
     state = stateInit source
     tokenState = Token.stateInit source
@@ -98,3 +118,9 @@ expect
     source = "(123 (456 654) 789)"
     res = parse (source |> Str.toUtf8) |> Result.withDefault Nil
     res == SList [SNumber 123, SList [SNumber 456, SNumber 654], SNumber 789]
+
+expect
+    in = SList [SNumber 123, SList [SNumber 456, SNumber 654], SNumber 789]
+    expected = "( 123.0 ( 456.0 654.0 ) 789.0 )"
+    out = toString in
+    out == expected
