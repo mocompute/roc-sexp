@@ -1,5 +1,7 @@
 module [
     Sexp,
+    parse,
+    toString,
 ]
 
 import Token
